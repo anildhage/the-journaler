@@ -1,0 +1,5 @@
+# Execution Rules
+
+1. Always run terminal commands and scripts within the dedicated virtual environment.
+   - Activate path: `/home/user/projects/the-journaler/.venv/bin/activate`
+2. Never install packages or dependencies globally under any circumstances.
