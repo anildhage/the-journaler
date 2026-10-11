@@ -14,6 +14,9 @@ except ImportError:
     # If imports fail, we'll handle gracefully
     pass
 
+# Import configuration service
+from services.config_service import load_settings
+
 class TranscriptionService:
     def __init__(self):
         self.inbox_dir = "./inbox"
@@ -25,6 +28,10 @@ class TranscriptionService:
         self.last_processed_timestamp = None
         self.is_running = False
         self.thread = None
+        self.model = None  # Store reference to current model
+        self.model_lock = threading.Lock()  # For thread-safe model access
+        self.current_whisper_model_size = None  # Track current whisper model for caching
+        self.cached_whisper_model = None  # Cached whisper model instance
         
     def get_pending_files(self) -> List[str]:
         """Get all pending .m4a files sorted by creation time (FIFO)"""
@@ -46,14 +53,25 @@ class TranscriptionService:
             return []
     
     def load_whisper_model(self):
-        """Load the whisper model with caching"""
-        # This will be cached using @st.cache_resource
-        try:
-            model = whisper.load_model("base")
-            return model
-        except Exception as e:
-            print(f"Error loading whisper model: {e}")
-            return None
+        """Load the whisper model with caching based on current settings"""
+        # Get current settings
+        settings = load_settings()
+        current_model_size = settings.get("whisper_model", "base")
+        
+        # Check if we need to reload the model (different size selected)
+        if self.current_whisper_model_size != current_model_size or self.cached_whisper_model is None:
+            try:
+                print(f"Loading Whisper model: {current_model_size}")
+                model = whisper.load_model(current_model_size)
+                self.cached_whisper_model = model
+                self.current_whisper_model_size = current_model_size
+                return model
+            except Exception as e:
+                print(f"Error loading whisper model: {e}")
+                return None
+        else:
+            # Return cached model if same size
+            return self.cached_whisper_model
     
     def transcribe_file(self, filename: str, model) -> Optional[str]:
         """Transcribe a single .m4a file and save as markdown"""
@@ -76,12 +94,6 @@ class TranscriptionService:
     
     def process_queue(self):
         """Process files in the queue sequentially"""
-        # Load model once for this thread
-        model = self.load_whisper_model()
-        if not model:
-            print("Failed to load whisper model")
-            return
-            
         while self.is_running:
             pending_files = self.get_pending_files()
             
@@ -92,6 +104,13 @@ class TranscriptionService:
                 if filename not in self.processed_files:
                     try:
                         self.current_status = f"Processing {filename}"
+                        
+                        # Load model with caching (this will only reload if needed)
+                        model = self.load_whisper_model()
+                        if not model:
+                            print("Failed to load whisper model")
+                            time.sleep(1)
+                            continue
                         
                         # Transcribe the file
                         output_path = self.transcribe_file(filename, model)

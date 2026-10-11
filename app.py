@@ -1,7 +1,7 @@
 import streamlit as st
-from config import INBOX_DIR, RAW_MARKDOWN_DIR
 from components.sidebar import render_sidebar
 from services.transcription_service import init_transcription_service
+from services.config_service import load_settings, save_settings
 import os
 from datetime import datetime
 
@@ -12,8 +12,33 @@ st.set_page_config(
     layout="wide"
 )
 
+# Define directory paths directly (since we had import issues)
+INBOX_DIR = "./inbox"
+RAW_MARKDOWN_DIR = "./raw-markdown"
+
+# Create directories if they don't exist
+os.makedirs(INBOX_DIR, exist_ok=True)
+os.makedirs(RAW_MARKDOWN_DIR, exist_ok=True)
+
+# Set page configuration
+st.set_page_config(
+    page_title="Journaler & Voice Hub",
+    page_icon="🎤",
+    layout="wide"
+)
+
 # Initialize the transcription service (this will start in background)
 transcription_service = init_transcription_service()
+
+# Load settings from config service
+settings = load_settings()
+
+# Initialize session state variables for settings if not already present
+if "whisper_model" not in st.session_state:
+    st.session_state.whisper_model = settings["whisper_model"]
+
+if "ollama_model" not in st.session_state:
+    st.session_state.ollama_model = settings["ollama_model"]
 
 # Default to Home view
 if "current_view" not in st.session_state:
@@ -69,6 +94,46 @@ elif st.session_state.current_view == "Dashboard":
     
     with tab1:
         st.subheader("Audio Processing Status")
+        
+        # Add settings controls at the top of this tab
+        st.markdown("### Settings")
+        
+        # Load current configuration
+        current_whisper_model = st.session_state.get('whisper_model', 'base')
+        current_ollama_model = st.session_state.get('ollama_model', 'llama3:latest')
+        
+        # Create expandable section for model settings
+        with st.expander("⚙️ Processing Settings & Model Selection"):
+            # Whisper model selection
+            whisper_model = st.selectbox(
+                "Whisper Model (STT)",
+                options=["tiny", "base", "small", "medium", "large"],
+                index=["tiny", "base", "small", "medium", "large"].index(current_whisper_model),
+                key="whisper_model_select"
+            )
+            
+            # Ollama model selection
+            ollama_model = st.selectbox(
+                "Ollama Model (LLM)",
+                options=["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"],
+                index=["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"].index(current_ollama_model),
+                key="ollama_model_select"
+            )
+            
+            # Save settings button
+            if st.button("💾 Save Settings"):
+                # Save settings using the config service
+                save_settings(whisper_model, ollama_model)
+                
+                # Update session state for immediate UI feedback
+                st.session_state.whisper_model = whisper_model
+                st.session_state.ollama_model = ollama_model
+                
+                # Show success toast/message
+                st.success("Settings saved! Next audio file will use these models.")
+                
+                # Trigger rerun to update dashboard metrics and UI session states
+                st.rerun()
         
         # Get current status from transcription service
         status = transcription_service.get_status()
