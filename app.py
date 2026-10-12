@@ -2,6 +2,7 @@ import streamlit as st
 from components.sidebar import render_sidebar
 from services.transcription_service import init_transcription_service
 from services.config_service import load_settings, save_settings
+from services.organization_service import list_available_prompts, list_organized_folders, create_organized_folder, process_raw_markdown
 import os
 from datetime import datetime
 
@@ -45,13 +46,15 @@ if "current_view" not in st.session_state:
     st.session_state.current_view = "Home"
 
 # Render sidebar
-home_selected, dashboard_selected = render_sidebar()
+home_selected, dashboard_selected, category_selected = render_sidebar()
 
 # Update view based on sidebar selection
 if home_selected:
     st.session_state.current_view = "Home"
 elif dashboard_selected:
     st.session_state.current_view = "Dashboard"
+elif category_selected:
+    st.session_state.current_view = f"Category_{category_selected}"
 
 # Main content area
 st.title("Journaler & Voice Hub")
@@ -90,7 +93,7 @@ elif st.session_state.current_view == "Dashboard":
     st.header("Dashboard")
     
     # Create sub-tabs for the dashboard
-    tab1, tab2 = st.tabs(["Audio Processing Status", "System Analytics"])
+    tab1, tab2, tab3 = st.tabs(["Audio Processing Status", "System Analytics", "Organise Raw Markdown"])
     
     with tab1:
         st.subheader("Audio Processing Status")
@@ -105,18 +108,30 @@ elif st.session_state.current_view == "Dashboard":
         # Create expandable section for model settings
         with st.expander("⚙️ Processing Settings & Model Selection"):
             # Whisper model selection
+            try:
+                whisper_model_index = ["tiny", "base", "small", "medium", "large"].index(current_whisper_model)
+            except ValueError:
+                # If the saved model is not in our list, default to the first option
+                whisper_model_index = 0
+            
             whisper_model = st.selectbox(
                 "Whisper Model (STT)",
                 options=["tiny", "base", "small", "medium", "large"],
-                index=["tiny", "base", "small", "medium", "large"].index(current_whisper_model),
+                index=whisper_model_index,
                 key="whisper_model_select"
             )
             
             # Ollama model selection
+            try:
+                ollama_model_index = ["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"].index(current_ollama_model)
+            except ValueError:
+                # If the saved model is not in our list, default to the first option
+                ollama_model_index = 0
+            
             ollama_model = st.selectbox(
                 "Ollama Model (LLM)",
                 options=["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"],
-                index=["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"].index(current_ollama_model),
+                index=ollama_model_index,
                 key="ollama_model_select"
             )
             
@@ -200,3 +215,151 @@ elif st.session_state.current_view == "Dashboard":
     with tab2:
         st.subheader("System Analytics")
         st.info("System analytics and additional dashboard features coming soon!")
+        
+    with tab3:
+        st.subheader("Organise Raw Markdown")
+        
+        # Get list of markdown files from raw-markdown directory
+        try:
+            markdown_files = []
+            if os.path.exists(RAW_MARKDOWN_DIR):
+                for filename in os.listdir(RAW_MARKDOWN_DIR):
+                    if filename.endswith('.md'):
+                        filepath = os.path.join(RAW_MARKDOWN_DIR, filename)
+                        stat = os.stat(filepath)
+                        created_time = datetime.fromtimestamp(stat.st_ctime)
+                        markdown_files.append({
+                            'filename': filename,
+                            'processed_date': created_time.strftime('%Y-%m-%d %H:%M')
+                        })
+            
+            # Sort by date (newest first)
+            markdown_files.sort(key=lambda x: x['processed_date'], reverse=True)
+            
+            if not markdown_files:
+                st.info("No raw markdown files found in the inbox. Process some audio files first.")
+            else:
+                st.markdown("### Raw Markdown Files")
+                
+                # Create a table for each file
+                for i, file_info in enumerate(markdown_files):
+                    filename = file_info['filename']
+                    
+                    with st.expander(f"File: {filename}"):
+                        # Get available prompts and organized folders
+                        available_prompts = list_available_prompts()
+                        organized_folders = list_organized_folders()
+                        
+                        # Add option to create new folder
+                        all_folders = organized_folders + ["+ Create New Folder"]
+                        
+                        # Row for file controls
+                        col1, col2, col3, col4, col5 = st.columns(5)
+                        
+                        with col1:
+                            st.write(f"**File:** {filename}")
+                            
+                        with col2:
+                            # Ollama model selection
+                            selected_model = st.selectbox(
+                                "Ollama Model",
+                                ["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"],
+                                key=f"model_{i}"
+                            )
+                            
+                        with col3:
+                            # Folder selection
+                            selected_folder = st.selectbox(
+                                "Target Folder",
+                                all_folders,
+                                key=f"folder_{i}"
+                            )
+                            
+                            # Handle creating new folder
+                            if selected_folder == "+ Create New Folder":
+                                new_folder_name = st.text_input("New folder name:", key=f"new_folder_{i}")
+                                
+                        with col4:
+                            # Prompt template selection
+                            selected_prompt = st.selectbox(
+                                "Prompt Template",
+                                available_prompts,
+                                key=f"prompt_{i}"
+                            )
+                            
+                        with col5:
+                            # Execute button
+                            if st.button("🚀 Execute LLM", key=f"execute_{i}"):
+                                # If creating new folder, create it first
+                                target_folder = selected_folder
+                                if selected_folder == "+ Create New Folder" and new_folder_name.strip():
+                                    if create_organized_folder(new_folder_name):
+                                        target_folder = new_folder_name
+                                        st.success(f"Created new folder: {new_folder_name}")
+                                    else:
+                                        st.error(f"Failed to create folder: {new_folder_name}")
+                                        continue
+                                elif selected_folder == "+ Create New Folder":
+                                    st.error("Please enter a name for the new folder")
+                                    continue
+                                
+                                # Execute the processing
+                                if process_raw_markdown(filename, selected_model, selected_prompt, target_folder):
+                                    st.success(f"Successfully processed {filename}!")
+                                else:
+                                    st.error(f"Failed to process {filename}")
+                                    
+        except Exception as e:
+            st.error(f"Error retrieving files: {str(e)}")
+
+else:
+    # Handle category view
+    if st.session_state.current_view.startswith("Category_"):
+        category_name = st.session_state.current_view.replace("Category_", "")
+        
+        st.header(f"📁 {category_name}")
+        
+        # Get the organized directory for this category
+        category_dir = f"./organized/{category_name}"
+        
+        if os.path.exists(category_dir):
+            try:
+                # Get all markdown files in this category
+                markdown_files = []
+                for filename in os.listdir(category_dir):
+                    if filename.endswith('.md'):
+                        filepath = os.path.join(category_dir, filename)
+                        stat = os.stat(filepath)
+                        created_time = datetime.fromtimestamp(stat.st_ctime)
+                        markdown_files.append({
+                            'filename': filename,
+                            'created_date': created_time.strftime('%Y-%m-%d %H:%M'),
+                            'filepath': filepath
+                        })
+                
+                # Sort by date (newest first)
+                markdown_files.sort(key=lambda x: x['created_date'], reverse=True)
+                
+                if not markdown_files:
+                    st.info(f"No markdown files found in {category_name} category.")
+                else:
+                    # Display each file as a card
+                    for file_info in markdown_files:
+                        filename = file_info['filename']
+                        filepath = file_info['filepath']
+                        
+                        with st.expander(f"📄 {filename}"):
+                            try:
+                                with open(filepath, 'r') as f:
+                                    content = f.read()
+                                
+                                # Display the formatted markdown content
+                                st.markdown(content)
+                                
+                            except Exception as e:
+                                st.error(f"Error reading file: {str(e)}")
+                                
+            except Exception as e:
+                st.error(f"Error retrieving files from {category_name}: {str(e)}")
+        else:
+            st.error(f"Category directory not found: {category_dir}")

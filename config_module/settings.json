@@ -1,0 +1,4 @@
+{
+    "whisper_model": "small",
+    "ollama_model": "llama3-groq-tool-use:8b"
+}
