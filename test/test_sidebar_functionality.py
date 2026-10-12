@@ -7,7 +7,7 @@ import os
 import sys
 
 # Add the project root to Python path
-sys.path.insert(0, '/home/user/projects/the-journaler')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from components.sidebar import render_sidebar
 from services.config_service import list_organized_folders

@@ -4,8 +4,6 @@ import os
 def render_sidebar():
     """Render the vertical sidebar navigation"""
     with st.sidebar:
-        st.title("Navigation")
-        
         # Navigation items
         home_selected = st.button("Home")
         dashboard_selected = st.button("Dashboard")
@@ -29,6 +27,8 @@ def render_sidebar():
         for category in sorted(category_tabs):
             if st.button(f"📁 {category}"):
                 category_selected = category
-                
+
+        logs_selected = st.button("Logs")
+
         # Return which page is selected
-        return home_selected, dashboard_selected, category_selected
+        return home_selected, dashboard_selected, category_selected, logs_selected

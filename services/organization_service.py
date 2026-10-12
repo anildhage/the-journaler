@@ -7,6 +7,7 @@ with custom prompt templates, and saves the organized output to destination fold
 
 import os
 import json
+import shutil
 from pathlib import Path
 from typing import List
 import ollama
@@ -14,6 +15,10 @@ import ollama
 # Import configuration constants
 from project_config import RAW_MARKDOWN_DIR, PROMPTS_DIR, ORGANIZED_ROOT_DIR
 from services.config_service import get_available_ollama_models
+from services.processing_log_service import (
+    record_processing_attempt,
+    update_processing_attempt,
+)
 
 
 def transform_and_organize_markdown(raw_filename, selected_model, selected_prompt_file, target_folder):
@@ -99,7 +104,7 @@ def transform_and_organize_markdown(raw_filename, selected_model, selected_promp
 
 def process_raw_markdown(raw_filename, selected_model, selected_prompt_file, target_folder):
     """
-    Alias for transform_and_organize_markdown for backward compatibility.
+    Process a raw file, persist its result, and remove it after successful processing.
     
     Args:
         raw_filename (str): Name of the raw markdown file to process
@@ -110,8 +115,45 @@ def process_raw_markdown(raw_filename, selected_model, selected_prompt_file, tar
     Returns:
         bool: True if successful, False otherwise
     """
-    success, message = transform_and_organize_markdown(raw_filename, selected_model, selected_prompt_file, target_folder)
-    return success
+    success, message = transform_and_organize_markdown(
+        raw_filename,
+        selected_model,
+        selected_prompt_file,
+        target_folder,
+    )
+    if not success:
+        record_processing_attempt(
+            raw_filename,
+            "Failed",
+            message,
+            selected_model,
+            selected_prompt_file,
+            target_folder,
+        )
+        return False
+
+    log_id = record_processing_attempt(
+        raw_filename,
+        "Processing succeeded",
+        message,
+        selected_model,
+        selected_prompt_file,
+        target_folder,
+    )
+    raw_file_path = os.path.join(RAW_MARKDOWN_DIR, raw_filename)
+    try:
+        os.remove(raw_file_path)
+    except OSError as error:
+        update_processing_attempt(
+            log_id,
+            "Cleanup failed",
+            f"{message}. Could not remove raw file: {error}",
+            False,
+        )
+        return False
+
+    update_processing_attempt(log_id, "Success", message, True)
+    return True
 
 
 def list_available_prompts() -> List[str]:
@@ -167,6 +209,63 @@ def create_organized_folder(folder_name: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def list_organized_files() -> List[str]:
+    """List files under organized folders using paths relative to the root."""
+    organized_root = Path(ORGANIZED_ROOT_DIR).resolve()
+    if not organized_root.exists():
+        return []
+
+    files = []
+    for path in organized_root.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        relative_path = path.relative_to(organized_root)
+        current = organized_root
+        for part in relative_path.parts:
+            current = current / part
+            if current.is_symlink():
+                break
+        else:
+            files.append(relative_path.as_posix())
+    return sorted(files)
+
+
+def _get_organized_path(relative_path: str) -> Path:
+    """Resolve a path inside organized storage and reject traversal or symlinks."""
+    relative = Path(relative_path)
+    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+        raise ValueError("Choose a valid path inside an organized folder.")
+
+    organized_root = Path(ORGANIZED_ROOT_DIR).resolve()
+    candidate = organized_root
+    for part in relative.parts:
+        candidate = candidate / part
+        if candidate.is_symlink():
+            raise ValueError("Organized content symlinks cannot be deleted from the app.")
+
+    resolved = candidate.resolve()
+    if resolved == organized_root or not resolved.is_relative_to(organized_root):
+        raise ValueError("The selected path is outside organized storage.")
+    return candidate
+
+
+def delete_organized_file(relative_path: str) -> None:
+    """Permanently delete one file from organized storage."""
+    file_path = _get_organized_path(relative_path)
+    if not file_path.is_file():
+        raise FileNotFoundError(f"Organized file not found: {relative_path}")
+    file_path.unlink()
+
+
+def delete_organized_folder(folder_name: str) -> None:
+    """Permanently delete a top-level organized folder and all its contents."""
+    folder_path = _get_organized_path(folder_name)
+    organized_root = Path(ORGANIZED_ROOT_DIR).resolve()
+    if folder_path.parent != organized_root or not folder_path.is_dir():
+        raise ValueError("Choose an existing top-level organized folder.")
+    shutil.rmtree(folder_path)
 
 
 # Test function for development

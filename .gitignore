@@ -99,6 +99,7 @@ htmlcov/
 .hypothesis/
 .ruff_cache/
 .mypy_cache/
+logs/processing_logs.sqlite3
 
 ==========================================
 
