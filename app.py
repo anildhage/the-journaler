@@ -105,9 +105,25 @@ if "whisper_model" not in st.session_state:
 if "ollama_model" not in st.session_state:
     st.session_state.ollama_model = settings["ollama_model"]
 
-# Default to Home view
-if "current_view" not in st.session_state:
-    st.session_state.current_view = "Home"
+def is_valid_view(view):
+    if view in {"Home", "Dashboard", "Logs"}:
+        return True
+    if view.startswith("Category_"):
+        category = view.removeprefix("Category_")
+        return category in {
+            folder.replace("/", "_").replace("\\", "_")
+            for folder in list_organized_folders()
+        }
+    return False
+
+
+# Keep the current page in the URL so a browser refresh restores it.
+requested_view = st.query_params.get("view", "Home")
+if not is_valid_view(requested_view):
+    requested_view = "Home"
+
+if "current_view" not in st.session_state or not is_valid_view(st.session_state.current_view):
+    st.session_state.current_view = requested_view
 
 # Render sidebar
 home_selected, dashboard_selected, category_selected, logs_selected = render_sidebar()
@@ -123,6 +139,9 @@ elif category_selected:
     # Sanitize the category name for use in session state
     sanitized_category = category_selected.replace("/", "_").replace("\\", "_")
     st.session_state.current_view = f"Category_{sanitized_category}"
+
+if st.query_params.get("view") != st.session_state.current_view:
+    st.query_params["view"] = st.session_state.current_view
 
 # Main content area
 st.title("The Outlander Journaler")
