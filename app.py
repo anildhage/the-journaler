@@ -8,7 +8,7 @@ from datetime import datetime
 
 # Set page configuration
 st.set_page_config(
-    page_title="Journaler & Voice Hub",
+    page_title="The Outlander Journaler",
     page_icon="🎤",
     layout="wide"
 )
@@ -23,7 +23,7 @@ os.makedirs(RAW_MARKDOWN_DIR, exist_ok=True)
 
 # Set page configuration
 st.set_page_config(
-    page_title="Journaler & Voice Hub",
+    page_title="The Outlander Journaler",
     page_icon="🎤",
     layout="wide"
 )
@@ -59,12 +59,12 @@ elif category_selected:
     st.session_state.current_view = f"Category_{sanitized_category}"
 
 # Main content area
-st.title("Journaler & Voice Hub")
+st.title("The Outlander Journaler")
 
 # Display current view
 if st.session_state.current_view == "Home":
     # Home View
-    st.header("Welcome to Journaler & Voice Hub")
+    st.header("Welcome to The Outlander Journaler")
     
     st.markdown("""
     This application is a voice-to-markdown processing hub and content dashboard.
@@ -94,12 +94,7 @@ elif st.session_state.current_view == "Dashboard":
     # Dashboard View
     st.header("Dashboard")
     
-    # Create sub-tabs for the dashboard
-    tab1, tab2, tab3 = st.tabs(["Audio Processing Status", "System Analytics", "Organise Raw Markdown"])
-    
-    with tab1:
-        st.subheader("Audio Processing Status")
-        
+    with st.container():
         # Add settings controls at the top of this tab
         st.markdown("### Settings")
         
@@ -171,72 +166,55 @@ elif st.session_state.current_view == "Dashboard":
         # Get current status from transcription service
         status = transcription_service.get_status()
         
-        # Display processing metrics
-        st.markdown("### Processing Metrics")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric(label="Total Files Received", value=str(status["total_processed"]))
+        # Keep the dashboard status metrics together in one compact card.
+        with st.container(border=True):
+            st.markdown("**Processing Metrics**")
+            col1, col2, col3 = st.columns(3)
             
-        with col2:
-            st.metric(label="Processing Status", value=status["current_status"])
-            
-        with col3:
-            st.metric(label="Pending Files", value=str(status["pending_files_count"]))
+            with col1:
+                st.metric(label="Total Files Received", value=str(status["total_processed"]))
+
+            with col2:
+                st.metric(label="Processing Status", value=status["current_status"])
+
+            with col3:
+                st.metric(label="Pending Files", value=str(status["pending_files_count"]))
         
         # Display log table
-        st.markdown("### Processing Log")
+        with st.container(border=True):
+            st.markdown("**Processing Log**")
         
-        # Get list of processed files from raw-markdown directory
-        try:
-            markdown_files = []
-            if os.path.exists(RAW_MARKDOWN_DIR):
-                for filename in os.listdir(RAW_MARKDOWN_DIR):
-                    if filename.endswith('.md'):
-                        filepath = os.path.join(RAW_MARKDOWN_DIR, filename)
-                        stat = os.stat(filepath)
-                        created_time = datetime.fromtimestamp(stat.st_ctime)
-                        markdown_files.append({
-                            'filename': filename,
-                            'processed_date': created_time.strftime('%Y-%m-%d %H:%M'),
-                            'status': 'Success'
-                        })
-            
-            # Sort by date (newest first)
-            markdown_files.sort(key=lambda x: x['processed_date'], reverse=True)
-            
-            if markdown_files:
-                # Create a DataFrame for the table
-                df = st.dataframe(markdown_files, width='stretch')
+            # Get list of processed files from raw-markdown directory
+            try:
+                markdown_files = []
+                if os.path.exists(RAW_MARKDOWN_DIR):
+                    for filename in os.listdir(RAW_MARKDOWN_DIR):
+                        if filename.endswith('.md'):
+                            filepath = os.path.join(RAW_MARKDOWN_DIR, filename)
+                            stat = os.stat(filepath)
+                            created_time = datetime.fromtimestamp(stat.st_ctime)
+                            markdown_files.append({
+                                'filename': filename,
+                                'processed_date': created_time.strftime('%Y-%m-%d %H:%M'),
+                                'status': 'Success'
+                            })
                 
-                # Add file selection for preview
-                selected_file = st.selectbox("Select a file to preview:", 
-                                           [f['filename'] for f in markdown_files] + [''])
+                # Sort by date (newest first)
+                markdown_files.sort(key=lambda x: x['processed_date'], reverse=True)
                 
-                if selected_file:
-                    # Show the content in an expandable code box
-                    with st.expander(f"Preview: {selected_file}"):
-                        try:
-                            filepath = os.path.join(RAW_MARKDOWN_DIR, selected_file)
-                            with open(filepath, 'r') as f:
-                                content = f.read()
-                            st.code(content, language='markdown')
-                        except Exception as e:
-                            st.error(f"Error reading file: {str(e)}")
-            else:
-                st.info("No processed files found yet.")
-                
-        except Exception as e:
-            st.error(f"Error retrieving log data: {str(e)}")
+                if markdown_files:
+                    st.dataframe(
+                        markdown_files,
+                        width='stretch',
+                        height=160,
+                        hide_index=True
+                    )
+                else:
+                    st.info("No processed files found yet.")
+
+            except Exception as e:
+                st.error(f"Error retrieving log data: {str(e)}")
     
-    with tab2:
-        st.subheader("System Analytics")
-        st.info("System analytics and additional dashboard features coming soon!")
-        
-    with tab3:
-        st.subheader("Organise Raw Markdown")
-        
         # Get list of markdown files from raw-markdown directory
         try:
             markdown_files = []
@@ -258,97 +236,72 @@ elif st.session_state.current_view == "Dashboard":
                 st.info("No raw markdown files found in the inbox. Process some audio files first.")
             else:
                 st.markdown("### Raw Markdown Files")
-                
-                # Create a table for each file
+
+                available_prompts = list_available_prompts()
+                organized_folders = list_organized_folders()
+                all_folders = organized_folders + ["+ Create New Folder"]
+
                 for i, file_info in enumerate(markdown_files):
                     filename = file_info['filename']
-                    
-                    with st.expander(f"File: {filename}"):
-                        # Get available prompts and organized folders
-                        available_prompts = list_available_prompts()
-                        organized_folders = list_organized_folders()
-                        
-                        # Add option to create new folder
-                        all_folders = organized_folders + ["+ Create New Folder"]
-                        
-                        # Row for file controls
-                        col1, col2, col3, col4, col5 = st.columns(5)
-                        
-                        with col1:
-                            st.write(f"**File:** {filename}")
-                            
-                        with col2:
-                            # Ollama model selection - dynamically discover available models
-                            available_models = get_available_ollama_models()
-                            if not available_models:
-                                # If no models found, show a warning and use default fallback
-                                st.warning("No Ollama models found. Please pull at least one model in Ollama.")
-                                # Disable the selectbox since there are no valid options
-                                st.selectbox(
-                                    "Ollama Model",
-                                    ["No models available - please pull models in Ollama"],
-                                    key=f"model_{i}",
-                                    disabled=True
-                                )
-                                selected_model = None
-                            else:
-                                # Get the currently selected model from session state or use first available
-                                current_ollama_model = st.session_state.get('ollama_model', available_models[0])
-                                
-                                try:
-                                    model_index = available_models.index(current_ollama_model)
-                                except ValueError:
-                                    # If the saved model is not in our list, default to the first option
-                                    model_index = 0
 
-                                selected_model = st.selectbox(
-                                    "Ollama Model",
-                                    available_models,
-                                    index=model_index,
-                                    key=f"model_{i}"
-                                )
-                            
-                        with col3:
-                            # Folder selection
+                    with st.container(border=True):
+                        col1, col2, col3, col4 = st.columns(
+                            [2.2, 1.4, 1.4, 1],
+                            vertical_alignment="bottom"
+                        )
+
+                        with col1:
+                            st.markdown(f"**{filename}**")
+                            st.caption(file_info['processed_date'])
+
+                        with col2:
                             selected_folder = st.selectbox(
                                 "Target Folder",
                                 all_folders,
                                 key=f"folder_{i}"
                             )
-                            
-                            # Handle creating new folder
-                            if selected_folder == "+ Create New Folder":
-                                new_folder_name = st.text_input("New folder name:", key=f"new_folder_{i}")
-                                
-                        with col4:
-                            # Prompt template selection
+
+                        with col3:
                             selected_prompt = st.selectbox(
                                 "Prompt Template",
                                 available_prompts,
                                 key=f"prompt_{i}"
                             )
-                            
-                        with col5:
-                            # Execute button
-                            if st.button("🚀 Execute LLM", key=f"execute_{i}"):
-                                # If creating new folder, create it first
-                                target_folder = selected_folder
-                                if selected_folder == "+ Create New Folder" and new_folder_name.strip():
-                                    if create_organized_folder(new_folder_name):
-                                        target_folder = new_folder_name
-                                        st.success(f"Created new folder: {new_folder_name}")
-                                    else:
-                                        st.error(f"Failed to create folder: {new_folder_name}")
-                                        continue
-                                elif selected_folder == "+ Create New Folder":
-                                    st.error("Please enter a name for the new folder")
-                                    continue
-                                
-                                # Execute the processing
-                                if process_raw_markdown(filename, selected_model, selected_prompt, target_folder):
-                                    st.success(f"Successfully processed {filename}!")
+
+                        with col4:
+                            execute = st.button(
+                                "Process",
+                                key=f"execute_{i}",
+                                type="primary",
+                                width="stretch"
+                            )
+
+                        new_folder_name = ""
+                        if selected_folder == "+ Create New Folder":
+                            new_folder_name = st.text_input(
+                                "New folder name",
+                                key=f"new_folder_{i}"
+                            )
+
+                        if execute:
+                            target_folder = selected_folder
+                            if selected_folder == "+ Create New Folder" and new_folder_name.strip():
+                                if create_organized_folder(new_folder_name):
+                                    target_folder = new_folder_name
+                                    st.success(f"Created new folder: {new_folder_name}")
                                 else:
-                                    st.error(f"Failed to process {filename}")
+                                    st.error(f"Failed to create folder: {new_folder_name}")
+                                    continue
+                            elif selected_folder == "+ Create New Folder":
+                                st.error("Please enter a name for the new folder")
+                                continue
+
+                            # Execute the processing
+                            selected_model = st.session_state.get('ollama_model')
+                            if process_raw_markdown(filename, selected_model, selected_prompt, target_folder):
+                                st.success(f"Successfully processed {filename}!")
+                            else:
+                                st.error(f"Failed to process {filename}")
                                     
         except Exception as e:
             st.error(f"Error retrieving files: {str(e)}")

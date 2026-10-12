@@ -1,4 +1,4 @@
 {
     "whisper_model": "base",
-    "ollama_model": "mistral:7b"
+    "ollama_model": "nomic-embed-text:latest"
 }
