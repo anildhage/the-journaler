@@ -15,7 +15,7 @@ Python & Virtual Environments
 
 Byte-compiled / optimized / DLL files
 
-pycache/
+__pycache__/
 *.py[cod]
 *$py.class
 
@@ -133,3 +133,5 @@ $RECYCLE.BIN/
 Linux
 
 *~
+
+*__pycache__/
