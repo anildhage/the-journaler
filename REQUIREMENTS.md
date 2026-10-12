@@ -27,3 +27,25 @@ python3 -m venv .venv
 Whisper's PyTorch and other Python dependencies are installed transitively.
 The test suite uses Python's standard-library `unittest` and needs no extra
 test packages.
+
+## MCP server
+
+The read-only MCP server uses the `mcp` package already listed in
+`requirements.txt`. It runs independently from Streamlit and supports stdio
+clients or a Streamable HTTP endpoint bound to localhost.
+
+For stdio clients, configure the client to launch:
+
+```text
+command: /absolute/path/to/the-journaler/.venv/bin/python
+args:    /absolute/path/to/the-journaler/mcp_server/server.py --transport stdio
+```
+
+For local Streamable HTTP clients, start the server with:
+
+```bash
+.venv/bin/python mcp_server/server.py --transport streamable-http
+```
+
+Connect the client to `http://127.0.0.1:8765/mcp`. The HTTP server binds only
+to the local machine.
