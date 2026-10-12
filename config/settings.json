@@ -1,4 +1,4 @@
 {
     "whisper_model": "base",
-    "ollama_model": "llama3:latest"
+    "ollama_model": "mistral:7b"
 }

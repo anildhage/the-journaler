@@ -1,3 +1,10 @@
+"""
+Organization Service Module
+
+This module handles the processing of raw Markdown files using Ollama models
+with custom prompt templates, and saves the organized output to destination folders.
+"""
+
 import os
 import json
 from pathlib import Path
@@ -6,112 +13,181 @@ import ollama
 
 # Import configuration constants
 from project_config import RAW_MARKDOWN_DIR, PROMPTS_DIR, ORGANIZED_ROOT_DIR
+from services.config_service import get_available_ollama_models
 
-def list_available_prompts() -> List[str]:
-    """Returns a list of prompt filenames from ./prompts/ directory."""
-    if not os.path.exists(PROMPTS_DIR):
-        return []
-    
-    try:
-        # Get all .md files in prompts directory
-        prompts = [f for f in os.listdir(PROMPTS_DIR) if f.endswith('.md')]
-        return sorted(prompts)
-    except Exception as e:
-        print(f"Error listing prompts: {e}")
-        return []
 
-def list_organized_folders() -> List[str]:
-    """Returns all existing subfolders inside ./organized/ directory."""
-    if not os.path.exists(ORGANIZED_ROOT_DIR):
-        return []
-    
-    try:
-        # Get all directories in organized root
-        folders = [d for d in os.listdir(ORGANIZED_ROOT_DIR) 
-                  if os.path.isdir(os.path.join(ORGANIZED_ROOT_DIR, d))]
-        return sorted(folders)
-    except Exception as e:
-        print(f"Error listing organized folders: {e}")
-        return []
-
-def create_organized_folder(folder_name: str) -> bool:
-    """Creates a new subfolder inside ./organized/<folder_name>."""
-    try:
-        folder_path = os.path.join(ORGANIZED_ROOT_DIR, folder_name)
-        os.makedirs(folder_path, exist_ok=True)
-        return True
-    except Exception as e:
-        print(f"Error creating organized folder: {e}")
-        return False
-
-def process_raw_markdown(raw_filename: str, selected_model: str, selected_prompt_file: str, target_folder: str) -> bool:
+def transform_and_organize_markdown(raw_filename, selected_model, selected_prompt_file, target_folder):
     """
-    Process a raw Markdown file through Ollama using the selected prompt.
+    Process a raw Markdown file using Ollama with a custom prompt and save to destination folder.
     
     Args:
         raw_filename (str): Name of the raw markdown file to process
         selected_model (str): Ollama model to use for processing
         selected_prompt_file (str): Name of the prompt template file to use
-        target_folder (str): Target folder in organized directory for output
-    
+        target_folder (str): Destination folder name within ./organized/
+        
     Returns:
-        bool: True if successful, False otherwise
+        tuple: (success: bool, message: str)
     """
+    
     try:
-        # Validate inputs
-        if not raw_filename or not selected_model or not selected_prompt_file or not target_folder:
-            print("Error: All parameters must be provided")
-            return False
+        # Validate that the Ollama model is available
+        available_models = get_available_ollama_models()
+        if selected_model not in available_models:
+            return False, f"Selected model '{selected_model}' is not available. Available models: {available_models}"
         
-        # Construct file paths
-        raw_file_path = os.path.join(RAW_MARKDOWN_DIR, raw_filename)
-        prompt_file_path = os.path.join(PROMPTS_DIR, selected_prompt_file)
-        output_folder_path = os.path.join(ORGANIZED_ROOT_DIR, target_folder)
+        # Define directory paths
+        raw_markdown_dir = "./raw-markdown"
+        prompts_dir = "./prompts"
+        organized_root_dir = "./organized"
         
-        # Ensure output folder exists
-        os.makedirs(output_folder_path, exist_ok=True)
+        # Construct full file paths
+        raw_file_path = os.path.join(raw_markdown_dir, raw_filename)
+        prompt_file_path = os.path.join(prompts_dir, selected_prompt_file)
+        target_folder_path = os.path.join(organized_root_dir, target_folder)
+        output_file_path = os.path.join(target_folder_path, raw_filename)
+        
+        # Verify source files exist
+        if not os.path.exists(raw_file_path):
+            return False, f"Raw markdown file not found: {raw_file_path}"
+            
+        if not os.path.exists(prompt_file_path):
+            return False, f"Prompt template file not found: {prompt_file_path}"
+        
+        # Create target folder if it doesn't exist
+        os.makedirs(target_folder_path, exist_ok=True)
         
         # Read raw markdown content
-        if not os.path.exists(raw_file_path):
-            print(f"Error: Raw file {raw_filename} not found")
-            return False
-        
         with open(raw_file_path, 'r', encoding='utf-8') as f:
             raw_content = f.read()
-        
+            
         # Read prompt template
-        if not os.path.exists(prompt_file_path):
-            print(f"Error: Prompt file {selected_prompt_file} not found")
-            return False
-        
         with open(prompt_file_path, 'r', encoding='utf-8') as f:
             prompt_template = f.read()
         
-        # Construct the LLM payload by combining prompt instructions + raw markdown content
-        llm_payload = prompt_template.format(transcription=raw_content)
+        # Prepare the prompt by combining template with raw content
+        full_prompt = f"{prompt_template}\n\n---\n\n{raw_content}"
         
-        # Execute ollama.chat() locally
+        # Send to Ollama for processing
         response = ollama.chat(
             model=selected_model,
             messages=[
                 {
                     'role': 'user',
-                    'content': llm_payload
+                    'content': full_prompt
                 }
             ]
         )
         
-        # Extract the generated content
-        transformed_content = response['message']['content']
+        # Extract the response content
+        organized_content = response['message']['content']
         
-        # Save the resulting transformed Markdown file
-        output_file_path = os.path.join(output_folder_path, raw_filename)
+        # Write the organized content to output file
         with open(output_file_path, 'w', encoding='utf-8') as f:
-            f.write(transformed_content)
+            f.write(organized_content)
+            
+        return True, f"Successfully processed {raw_filename} and saved to {target_folder}/{raw_filename}"
         
-        print(f"Successfully processed {raw_filename} using model {selected_model}")
-        return True
+    except ollama.ResponseError as e:
+        error_msg = f"Ollama response error: {e.error}"
+        return False, error_msg
         
     except Exception as e:
-        print(f"Error processing markdown file: {e}")
+        error_msg = f"Error processing file: {str(e)}"
+        return False, error_msg
+
+
+def process_raw_markdown(raw_filename, selected_model, selected_prompt_file, target_folder):
+    """
+    Alias for transform_and_organize_markdown for backward compatibility.
+    
+    Args:
+        raw_filename (str): Name of the raw markdown file to process
+        selected_model (str): Ollama model to use for processing
+        selected_prompt_file (str): Name of the prompt template file to use
+        target_folder (str): Destination folder name within ./organized/
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    success, message = transform_and_organize_markdown(raw_filename, selected_model, selected_prompt_file, target_folder)
+    return success
+
+
+def list_available_prompts() -> List[str]:
+    """
+    Get a list of all available prompt template files.
+    
+    Returns:
+        List[str]: List of prompt filenames
+    """
+    prompts_dir = "./prompts"
+    if not os.path.exists(prompts_dir):
+        return []
+    
+    try:
+        prompt_files = [f for f in os.listdir(prompts_dir) if f.endswith('.md')]
+        return sorted(prompt_files)
+    except Exception:
+        return []
+
+
+def list_organized_folders() -> List[str]:
+    """
+    Get a list of all organized folders (subdirectories in ./organized/).
+    
+    Returns:
+        List[str]: List of folder names
+    """
+    organized_dir = "./organized"
+    if not os.path.exists(organized_dir):
+        return []
+    
+    try:
+        folders = [d for d in os.listdir(organized_dir) if os.path.isdir(os.path.join(organized_dir, d))]
+        return sorted(folders)
+    except Exception:
+        return []
+
+
+def create_organized_folder(folder_name: str) -> bool:
+    """
+    Create a new organized folder.
+    
+    Args:
+        folder_name (str): Name of the folder to create
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        organized_dir = "./organized"
+        folder_path = os.path.join(organized_dir, folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        return True
+    except Exception:
         return False
+
+
+# Test function for development
+def test_organization_service():
+    """Test function to verify the organization service works correctly."""
+    
+    # List available models for testing
+    print("Available Ollama models:", get_available_ollama_models())
+    
+    # Try to process a sample file (this will fail if no files exist)
+    try:
+        success, message = transform_and_organize_markdown(
+            raw_filename="sample.md",
+            selected_model=None,  # Will be handled by the UI
+            selected_prompt_file="default_blog.md",
+            target_folder="test"
+        )
+        print(f"Test result: {success} - {message}")
+    except Exception as e:
+        print(f"Test error (expected if files don't exist): {e}")
+
+
+if __name__ == "__main__":
+    test_organization_service()

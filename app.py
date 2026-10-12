@@ -1,7 +1,7 @@
 import streamlit as st
 from components.sidebar import render_sidebar
 from services.transcription_service import init_transcription_service
-from services.config_service import load_settings, save_settings
+from services.config_service import load_settings, save_settings, get_available_ollama_models
 from services.organization_service import list_available_prompts, list_organized_folders, create_organized_folder, process_raw_markdown
 import os
 from datetime import datetime
@@ -54,7 +54,9 @@ if home_selected:
 elif dashboard_selected:
     st.session_state.current_view = "Dashboard"
 elif category_selected:
-    st.session_state.current_view = f"Category_{category_selected}"
+    # Sanitize the category name for use in session state
+    sanitized_category = category_selected.replace("/", "_").replace("\\", "_")
+    st.session_state.current_view = f"Category_{sanitized_category}"
 
 # Main content area
 st.title("Journaler & Voice Hub")
@@ -121,19 +123,35 @@ elif st.session_state.current_view == "Dashboard":
                 key="whisper_model_select"
             )
             
-            # Ollama model selection
-            try:
-                ollama_model_index = ["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"].index(current_ollama_model)
-            except ValueError:
-                # If the saved model is not in our list, default to the first option
-                ollama_model_index = 0
-            
-            ollama_model = st.selectbox(
-                "Ollama Model (LLM)",
-                options=["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"],
-                index=ollama_model_index,
-                key="ollama_model_select"
-            )
+            # Ollama model selection - dynamically discover available models
+            available_models = get_available_ollama_models()
+            if not available_models:
+                # If no models found, show a warning and use default fallback
+                st.warning("No Ollama models found. Please pull at least one model in Ollama.")
+                # Disable the selectbox since there are no valid options
+                st.selectbox(
+                    "Ollama Model (LLM)",
+                    ["No models available - please pull models in Ollama"],
+                    key="ollama_model_select",
+                    disabled=True
+                )
+                ollama_model = None
+            else:
+                # Get the currently selected model from session state or use first available
+                current_ollama_model = st.session_state.get('ollama_model', available_models[0])
+                
+                try:
+                    ollama_model_index = available_models.index(current_ollama_model)
+                except ValueError:
+                    # If the saved model is not in our list, default to the first option
+                    ollama_model_index = 0
+
+                ollama_model = st.selectbox(
+                    "Ollama Model (LLM)",
+                    options=available_models,
+                    index=ollama_model_index,
+                    key="ollama_model_select"
+                )
             
             # Save settings button
             if st.button("💾 Save Settings"):
@@ -190,7 +208,7 @@ elif st.session_state.current_view == "Dashboard":
             
             if markdown_files:
                 # Create a DataFrame for the table
-                df = st.dataframe(markdown_files, use_container_width=True)
+                df = st.dataframe(markdown_files, width='stretch')
                 
                 # Add file selection for preview
                 selected_file = st.selectbox("Select a file to preview:", 
@@ -260,12 +278,35 @@ elif st.session_state.current_view == "Dashboard":
                             st.write(f"**File:** {filename}")
                             
                         with col2:
-                            # Ollama model selection
-                            selected_model = st.selectbox(
-                                "Ollama Model",
-                                ["llama3-groq-tool-use:8b", "qwen2.5-coder:32b", "mistral:7b"],
-                                key=f"model_{i}"
-                            )
+                            # Ollama model selection - dynamically discover available models
+                            available_models = get_available_ollama_models()
+                            if not available_models:
+                                # If no models found, show a warning and use default fallback
+                                st.warning("No Ollama models found. Please pull at least one model in Ollama.")
+                                # Disable the selectbox since there are no valid options
+                                st.selectbox(
+                                    "Ollama Model",
+                                    ["No models available - please pull models in Ollama"],
+                                    key=f"model_{i}",
+                                    disabled=True
+                                )
+                                selected_model = None
+                            else:
+                                # Get the currently selected model from session state or use first available
+                                current_ollama_model = st.session_state.get('ollama_model', available_models[0])
+                                
+                                try:
+                                    model_index = available_models.index(current_ollama_model)
+                                except ValueError:
+                                    # If the saved model is not in our list, default to the first option
+                                    model_index = 0
+
+                                selected_model = st.selectbox(
+                                    "Ollama Model",
+                                    available_models,
+                                    index=model_index,
+                                    key=f"model_{i}"
+                                )
                             
                         with col3:
                             # Folder selection
@@ -315,7 +356,8 @@ elif st.session_state.current_view == "Dashboard":
 else:
     # Handle category view
     if st.session_state.current_view.startswith("Category_"):
-        category_name = st.session_state.current_view.replace("Category_", "")
+        # Extract category name, handling potential sanitization issues
+        category_name = st.session_state.current_view.replace("Category_", "", 1)
         
         st.header(f"📁 {category_name}")
         
