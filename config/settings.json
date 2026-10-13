@@ -1,4 +1,4 @@
 {
     "whisper_model": "base",
-    "ollama_model": "mistral:7b"
+    "ollama_model": "llama3-groq-tool-use:8b"
 }
